@@ -1,28 +1,36 @@
 /**
  * App.jsx
  *
- * Top-level component. Manages state for rules, cart items, and results.
- * Wires together CSV upload → parse → engine → display.
+ * Top-level component. Holds rules and cart items in state; results are
+ * derived from them on every render, so any input change re-runs the engine.
+ * Input adapters (src/inputs) turn files/text into rules or cart items.
  */
 
 import { useState } from 'react'
-import CsvUploader from './components/CsvUploader.jsx'
+import FileUploader from './components/FileUploader.jsx'
 import DataTable from './components/DataTable.jsx'
 import ErrorBanner from './components/ErrorBanner.jsx'
-import { parseRulesCSV, parseCartCSV } from './engine/csvParser.js'
-import { processCart, cartTotal } from './engine/discountEngine.js'
+import { parseRulesCSV, parseCartCSV } from './inputs/csvParser.js'
+import { processCart, cartTotal, applyCartOffer, formatRs } from './engine/discountEngine.js'
 
 // ── Column definitions ───────────────────────────────────────────
 
+const capitalise = (v) => v.charAt(0).toUpperCase() + v.slice(1)
+
 const RULES_COLUMNS = [
   { key: 'ruleId',    label: 'Rule ID' },
-  { key: 'scope',     label: 'Scope',      render: (v) => v.charAt(0).toUpperCase() + v.slice(1) },
+  { key: 'scope',     label: 'Scope',      render: capitalise },
   { key: 'appliesTo', label: 'Applies To' },
-  { key: 'type',      label: 'Type',       render: (v) => v.charAt(0).toUpperCase() + v.slice(1) },
+  { key: 'type',      label: 'Type',       render: capitalise },
   {
     key: 'value',
     label: 'Value',
-    render: (v, row) => row.type === 'percentage' ? `${v}% off` : `Rs.${v} off`,
+    render: (v, row) => row.type === 'percentage' ? `${v}% off` : `${formatRs(v)} off`,
+  },
+  {
+    key: 'minCartValue',
+    label: 'Condition',
+    render: (v, row) => row.scope === 'cart' && v > 0 ? `Cart total ≥ ${formatRs(v)}` : '—',
   },
   { key: 'stackable', label: 'Stackable',  render: (v) => (v ? 'Yes' : 'No') },
 ]
@@ -32,17 +40,24 @@ const CART_COLUMNS = [
   { key: 'product',   label: 'Product' },
   { key: 'brand',     label: 'Brand' },
   { key: 'platform',  label: 'Platform' },
-  { key: 'basePrice', label: 'Base Price', render: (v) => `Rs.${v.toLocaleString('en-IN')}` },
+  { key: 'basePrice', label: 'Base Price', render: formatRs },
 ]
+
+function itemStatus(row) {
+  if (row.skippedRules.length > 0) return ['Max discount', '#1e5c2c', '#e3f4e7']
+  if (row.appliedRules.length > 1) return ['Stacked', '#1a3a8a', '#e6ecfb']
+  if (row.appliedRules.length === 1) return ['Discount applied', '#1e5c2c', '#e3f4e7']
+  return ['No offer', '#666', '#eee']
+}
 
 const RESULTS_COLUMNS = [
   { key: 'itemId',    label: 'Item' },
   { key: 'product',   label: 'Product' },
-  { key: 'basePrice', label: 'Base Price',  render: (v) => `Rs.${v.toLocaleString('en-IN')}` },
+  { key: 'basePrice', label: 'Base Price',  render: formatRs },
   { key: 'finalPrice',label: 'Final Price',
     render: (v, row) => (
       <span style={{ fontWeight: 700, color: row.totalDiscount > 0 ? '#1e5c2c' : '#131A48' }}>
-        Rs.{v.toLocaleString('en-IN')}
+        {formatRs(v)}
       </span>
     ),
   },
@@ -51,7 +66,7 @@ const RESULTS_COLUMNS = [
     label: 'You Save',
     render: (v) =>
       v > 0 ? (
-        <span style={{ color: '#1e5c2c', fontWeight: 600 }}>Rs.{v.toLocaleString('en-IN')}</span>
+        <span style={{ color: '#1e5c2c', fontWeight: 600 }}>{formatRs(v)}</span>
       ) : (
         <span style={{ color: '#888' }}>—</span>
       ),
@@ -59,11 +74,19 @@ const RESULTS_COLUMNS = [
   {
     key: 'reasoning',
     label: 'Offer Applied',
-    render: (v) => (
-      <span style={{ color: v === 'No offers available' ? '#888' : '#131A48', fontStyle: v === 'No offers available' ? 'italic' : 'normal' }}>
+    render: (v, row) => (
+      <span style={{ color: row.totalDiscount > 0 ? '#131A48' : '#888', fontStyle: row.totalDiscount > 0 ? 'normal' : 'italic' }}>
         {v}
       </span>
     ),
+  },
+  {
+    key: 'appliedRules',
+    label: 'Status',
+    render: (_, row) => {
+      const [label, color, bg] = itemStatus(row)
+      return <span style={{ ...S.tag(color, bg), whiteSpace: 'nowrap' }}>{label}</span>
+    },
   },
 ]
 
@@ -78,24 +101,17 @@ const S = {
   main:    { maxWidth: 960, margin: '0 auto', padding: '1.8rem 1.5rem' },
   section: { background: '#fff', border: '1px solid #CECECE', borderRadius: 6, padding: '1.2rem 1.4rem', marginBottom: '1.2rem' },
   sectionTitle: { fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: 14, color: '#131A48', marginBottom: '0.7rem', paddingBottom: 6, borderBottom: '2px solid #FF5800', display: 'inline-block' },
-  grid2:   { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' },
-  btn:     {
-    background: '#FF5800', color: '#fff', border: 'none', borderRadius: 4,
-    padding: '0.65rem 2rem', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-    letterSpacing: '0.04em', textTransform: 'uppercase',
+  grid2:   { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' },
+  hint:    { fontSize: 12, color: '#888', textAlign: 'center', marginBottom: '1.2rem' },
+  summary: { marginTop: '0.75rem', borderTop: '2px solid #131A48', paddingTop: '0.5rem' },
+  summaryRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    gap: '1rem', padding: '0.35rem 0', fontSize: 13, color: '#131A48',
   },
-  btnDisabled: {
-    background: '#CECECE', color: '#fff', border: 'none', borderRadius: 4,
-    padding: '0.65rem 2rem', fontSize: 13, fontWeight: 700, cursor: 'not-allowed',
-    letterSpacing: '0.04em', textTransform: 'uppercase',
-  },
-  totalRow: {
-    display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
-    gap: '1rem', marginTop: '0.75rem', paddingTop: '0.75rem',
-    borderTop: '2px solid #131A48',
-  },
+  offerRow: { background: '#fffbea', margin: '0 -0.5rem', padding: '0.45rem 0.5rem', borderRadius: 4 },
   totalLabel: { fontWeight: 700, fontSize: 14, color: '#131A48' },
   totalValue: { fontWeight: 700, fontSize: 16, color: '#131A48' },
+  nudge:   { fontSize: 12, color: '#b34000', marginTop: '0.4rem', textAlign: 'right' },
   tag: (color, bg) => ({
     display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '1px 6px',
     borderRadius: 20, background: bg, color, textTransform: 'uppercase', letterSpacing: '0.04em',
@@ -113,32 +129,24 @@ export default function App() {
   const [cartErrors, setCartErrors] = useState([])
   const [cartFileName, setCartFileName]   = useState('')
 
-  const [results, setResults]       = useState(null)
+  const results = cartItems.length > 0 ? processCart(cartItems, rules) : null
+  const cart = results && applyCartOffer(cartTotal(results), rules)
 
   // ── Handlers ──
 
-  function handleRulesLoad(csvText, fileName) {
-    const { data, errors } = parseRulesCSV(csvText)
+  async function handleRulesLoad(file) {
+    const { data, errors } = parseRulesCSV(await file.text())
     setRules(data)
     setRulesErr(errors)
-    setRulesFileName(fileName)
-    setResults(null) // clear stale results
+    setRulesFileName(file.name)
   }
 
-  function handleCartLoad(csvText, fileName) {
-    const { data, errors } = parseCartCSV(csvText)
+  async function handleCartLoad(file) {
+    const { data, errors } = parseCartCSV(await file.text())
     setCartItems(data)
     setCartErrors(errors)
-    setCartFileName(fileName)
-    setResults(null)
+    setCartFileName(file.name)
   }
-
-  function handleCalculate() {
-    const res = processCart(cartItems, rules)
-    setResults(res)
-  }
-
-  const canCalculate = rules.length > 0 && cartItems.length > 0
 
   // ── Render ──
 
@@ -157,7 +165,7 @@ export default function App() {
           {/* Rules upload */}
           <div style={S.section}>
             <div style={S.sectionTitle}>Discount Rules</div>
-            <CsvUploader
+            <FileUploader
               label="rules.csv"
               description="Upload your discount rules CSV"
               onLoad={handleRulesLoad}
@@ -178,7 +186,7 @@ export default function App() {
           {/* Cart upload */}
           <div style={S.section}>
             <div style={S.sectionTitle}>Cart Items</div>
-            <CsvUploader
+            <FileUploader
               label="cart.csv"
               description="Upload your cart CSV"
               onLoad={handleCartLoad}
@@ -197,32 +205,33 @@ export default function App() {
           </div>
         </div>
 
-        {/* Calculate button */}
-        <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
-          <button
-            style={canCalculate ? S.btn : S.btnDisabled}
-            onClick={handleCalculate}
-            disabled={!canCalculate}
-          >
-            Calculate Discounts
-          </button>
-          {!canCalculate && (
-            <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
-              Upload both files to calculate
-            </div>
-          )}
-        </div>
-
         {/* Results */}
-        {results && (
+        {results ? (
           <div style={S.section}>
             <div style={S.sectionTitle}>Cart Summary</div>
             <DataTable columns={RESULTS_COLUMNS} rows={results} />
-            <div style={S.totalRow}>
-              <span style={S.totalLabel}>Cart Total</span>
-              <span style={S.totalValue}>Rs.{cartTotal(results).toLocaleString('en-IN')}</span>
+            <div style={S.summary}>
+              {cart.discount > 0 && (
+                <>
+                  <div style={S.summaryRow}>
+                    <span>Cart total before offer</span>
+                    <span>{formatRs(cart.subtotal)}</span>
+                  </div>
+                  <div style={{ ...S.summaryRow, ...S.offerRow }}>
+                    <span style={{ fontWeight: 600 }}>{cart.reasoning}</span>
+                    <span style={{ fontWeight: 700, color: '#1e5c2c' }}>−{formatRs(cart.discount)}</span>
+                  </div>
+                </>
+              )}
+              <div style={S.summaryRow}>
+                <span style={S.totalLabel}>{cart.discount > 0 ? 'Final Cart Total' : 'Cart Total'}</span>
+                <span style={S.totalValue}>{formatRs(cart.total)}</span>
+              </div>
+              {cart.nudge && <div style={S.nudge}>{cart.nudge}</div>}
             </div>
           </div>
+        ) : (
+          <div style={S.hint}>Upload a cart to see final prices</div>
         )}
 
       </div>
