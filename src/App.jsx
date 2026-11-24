@@ -10,7 +10,9 @@ import { useState } from 'react'
 import FileUploader from './components/FileUploader.jsx'
 import DataTable from './components/DataTable.jsx'
 import ErrorBanner from './components/ErrorBanner.jsx'
+import RuleInput from './components/RuleInput.jsx'
 import { parseRulesCSV, parseCartCSV } from './inputs/csvParser.js'
+import { nextRuleId } from './inputs/nlRule.js'
 import { parseCartPdf } from './inputs/pdfCart.js'
 import { processCart, cartTotal, applyCartOffer, formatRs } from './engine/discountEngine.js'
 
@@ -155,6 +157,10 @@ export default function App() {
     setCartFileName(file.name)
   }
 
+  function handleRuleAdd(rule) {
+    setRules((current) => [...current, { ...rule, ruleId: nextRuleId(current) }])
+  }
+
   // ── Render ──
 
   return (
@@ -186,6 +192,12 @@ export default function App() {
               <DataTable columns={RULES_COLUMNS} rows={rules} />
             </div>
           )}
+        </div>
+
+        {/* Natural-language rule */}
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Add a Rule in Plain English</div>
+          <RuleInput rules={rules} cartItems={cartItems} onAdd={handleRuleAdd} />
         </div>
 
         {/* Cart upload */}
