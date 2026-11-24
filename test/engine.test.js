@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { parseRulesCSV, parseCartCSV } from '../src/inputs/csvParser.js'
 import { processCart, cartTotal, applyCartOffer, applyDiscounts } from '../src/engine/discountEngine.js'
 import { validateRule } from '../src/engine/validate.js'
+import { rowsToCartItems, textToWords } from '../src/inputs/pdfCart.js'
 
 const rules = parseRulesCSV(readFileSync(new URL('../sample-data/rules.csv', import.meta.url), 'utf8'))
 const cart = parseCartCSV(readFileSync(new URL('../sample-data/cart.csv', import.meta.url), 'utf8'))
@@ -54,4 +55,40 @@ test('validateRule rejects malformed rules', () => {
   assert.match(validateRule({ ...ok, stackable: 'maybe' }).error, /stackable/)
   assert.match(validateRule({ ...ok, minCartValue: 2000 }).error, /only cart rules/)
   assert.equal(validateRule({ ...ok, scope: 'cart', minCartValue: 'Rs.5,000' }).rule.minCartValue, 5000)
+})
+
+const PDF_TEXT = `Order #OP-9921  |  Date: 15 Jan 2025
+
+Product          Brand         Platform      Base Price
+──────────────────────────────────────────────────────────
+Cushion Cover    Natura Casa   Amazon India  Rs.1,299
+Bed Sheet Set    Natura Casa   Flipkart      Rs.849
+Wall Shelf       LivSpace Pro  Amazon India  Rs.599
+Ceramic Vase     LivSpace Pro  Noon          Rs.2,499
+Cutting Board    Nordic Basics Amazon India  Rs.449
+Desk Organiser   Nordic Basics Flipkart      Rs.899`
+
+test('PDF table rows become the same cart as cart.csv', () => {
+  const { data, errors } = rowsToCartItems(PDF_TEXT.split('\n').map(textToWords))
+  assert.deepEqual(errors, [])
+  assert.deepEqual(data, cart.data)
+})
+
+test('malformed PDF rows are skipped and reported, the rest still load', () => {
+  const text = PDF_TEXT + `
+Table Lamp       Nordic Basics Amazon India  Rs.abc
+Floor Rug        Natura Casa                 Rs.999
+Total                                        Rs.6,695`
+  const { data, errors } = rowsToCartItems(text.split('\n').map(textToWords))
+  assert.equal(data.length, 6)
+  assert.equal(errors.length, 3)
+  assert.match(errors[0], /Row 7 .*base price/)
+  assert.match(errors[1], /Row 8 .*missing platform/)
+  assert.match(errors[2], /Row 9 .*missing brand, platform/)
+})
+
+test('a PDF without the expected header is rejected', () => {
+  const { data, errors } = rowsToCartItems(['Invoice', 'Cushion Cover 1299'].map(textToWords))
+  assert.equal(data.length, 0)
+  assert.match(errors[0], /No cart table found/)
 })

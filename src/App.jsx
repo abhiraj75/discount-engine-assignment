@@ -11,14 +11,16 @@ import FileUploader from './components/FileUploader.jsx'
 import DataTable from './components/DataTable.jsx'
 import ErrorBanner from './components/ErrorBanner.jsx'
 import { parseRulesCSV, parseCartCSV } from './inputs/csvParser.js'
+import { parseCartPdf } from './inputs/pdfCart.js'
 import { processCart, cartTotal, applyCartOffer, formatRs } from './engine/discountEngine.js'
 
 // ── Column definitions ───────────────────────────────────────────
 
 const capitalise = (v) => v.charAt(0).toUpperCase() + v.slice(1)
+const nowrap = (v) => <span style={{ whiteSpace: 'nowrap' }}>{v}</span>
 
 const RULES_COLUMNS = [
-  { key: 'ruleId',    label: 'Rule ID' },
+  { key: 'ruleId',    label: 'Rule ID',    render: nowrap },
   { key: 'scope',     label: 'Scope',      render: capitalise },
   { key: 'appliesTo', label: 'Applies To' },
   { key: 'type',      label: 'Type',       render: capitalise },
@@ -36,7 +38,7 @@ const RULES_COLUMNS = [
 ]
 
 const CART_COLUMNS = [
-  { key: 'itemId',    label: 'Item' },
+  { key: 'itemId',    label: 'Item',       render: nowrap },
   { key: 'product',   label: 'Product' },
   { key: 'brand',     label: 'Brand' },
   { key: 'platform',  label: 'Platform' },
@@ -51,7 +53,7 @@ function itemStatus(row) {
 }
 
 const RESULTS_COLUMNS = [
-  { key: 'itemId',    label: 'Item' },
+  { key: 'itemId',    label: 'Item',       render: nowrap },
   { key: 'product',   label: 'Product' },
   { key: 'basePrice', label: 'Base Price',  render: formatRs },
   { key: 'finalPrice',label: 'Final Price',
@@ -101,7 +103,6 @@ const S = {
   main:    { maxWidth: 960, margin: '0 auto', padding: '1.8rem 1.5rem' },
   section: { background: '#fff', border: '1px solid #CECECE', borderRadius: 6, padding: '1.2rem 1.4rem', marginBottom: '1.2rem' },
   sectionTitle: { fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: 14, color: '#131A48', marginBottom: '0.7rem', paddingBottom: 6, borderBottom: '2px solid #FF5800', display: 'inline-block' },
-  grid2:   { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' },
   hint:    { fontSize: 12, color: '#888', textAlign: 'center', marginBottom: '1.2rem' },
   summary: { marginTop: '0.75rem', borderTop: '2px solid #131A48', paddingTop: '0.5rem' },
   summaryRow: {
@@ -142,7 +143,13 @@ export default function App() {
   }
 
   async function handleCartLoad(file) {
-    const { data, errors } = parseCartCSV(await file.text())
+    const isPdf = file.name.toLowerCase().endsWith('.pdf')
+    const { data, errors } = isPdf ? await parseCartPdf(file) : parseCartCSV(await file.text())
+    if (data.length === 0) {
+      const kept = cartItems.length > 0 ? ' Your current cart was kept.' : ''
+      setCartErrors([...errors, `No valid items found in ${file.name}.${kept}`])
+      return
+    }
     setCartItems(data)
     setCartErrors(errors)
     setCartFileName(file.name)
@@ -160,49 +167,47 @@ export default function App() {
 
       <div style={S.main}>
 
-        {/* Upload row */}
-        <div style={S.grid2}>
-          {/* Rules upload */}
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Discount Rules</div>
-            <FileUploader
-              label="rules.csv"
-              description="Upload your discount rules CSV"
-              onLoad={handleRulesLoad}
-              hasData={rules.length > 0}
-              fileName={rulesFileName}
-            />
-            <ErrorBanner errors={rulesErrors} />
-            {rules.length > 0 && (
-              <div style={{ marginTop: '0.75rem' }}>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-                  {rules.length} rule{rules.length > 1 ? 's' : ''} loaded
-                </div>
-                <DataTable columns={RULES_COLUMNS} rows={rules} />
+        {/* Rules upload */}
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Discount Rules</div>
+          <FileUploader
+            label="rules.csv"
+            description="Upload your discount rules CSV"
+            onLoad={handleRulesLoad}
+            hasData={rules.length > 0}
+            fileName={rulesFileName}
+          />
+          <ErrorBanner errors={rulesErrors} />
+          {rules.length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                {rules.length} rule{rules.length > 1 ? 's' : ''} loaded
               </div>
-            )}
-          </div>
+              <DataTable columns={RULES_COLUMNS} rows={rules} />
+            </div>
+          )}
+        </div>
 
-          {/* Cart upload */}
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Cart Items</div>
-            <FileUploader
-              label="cart.csv"
-              description="Upload your cart CSV"
-              onLoad={handleCartLoad}
-              hasData={cartItems.length > 0}
-              fileName={cartFileName}
-            />
-            <ErrorBanner errors={cartErrors} />
-            {cartItems.length > 0 && (
-              <div style={{ marginTop: '0.75rem' }}>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-                  {cartItems.length} item{cartItems.length > 1 ? 's' : ''} loaded
-                </div>
-                <DataTable columns={CART_COLUMNS} rows={cartItems} />
+        {/* Cart upload */}
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Cart Items</div>
+          <FileUploader
+            label="cart.csv or cart.pdf"
+            description="Upload your cart as CSV or PDF"
+            accept=".csv,.pdf"
+            onLoad={handleCartLoad}
+            hasData={cartItems.length > 0}
+            fileName={cartFileName}
+          />
+          <ErrorBanner errors={cartErrors} />
+          {cartItems.length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                {cartItems.length} item{cartItems.length > 1 ? 's' : ''} loaded
               </div>
-            )}
-          </div>
+              <DataTable columns={CART_COLUMNS} rows={cartItems} />
+            </div>
+          )}
         </div>
 
         {/* Results */}
