@@ -40,7 +40,7 @@ function ruleFields(rule) {
     ['Value', rule.type === 'percentage' ? `${rule.value}%` : formatRs(rule.value)],
     ['Stackable', rule.stackable ? 'Yes' : 'No'],
   ]
-  if (rule.scope === 'cart') fields.push(['Min cart value', formatRs(rule.minCartValue)])
+  if (rule.scope === 'cart') fields.push(['Min cart value', rule.minCartValue > 0 ? formatRs(rule.minCartValue) : 'No minimum'])
   return fields
 }
 
@@ -114,7 +114,9 @@ export default function RuleInput({ rules, cartItems, onAdd }) {
           </div>
           {draft.scope === 'cart' && (
             <div style={S.note}>
-              Applies when the cart total after item discounts is {formatRs(draft.minCartValue)} or more.
+              {draft.minCartValue > 0
+                ? `Applies when the cart total after item discounts is ${formatRs(draft.minCartValue)} or more.`
+                : 'Applies to every cart, after item discounts.'}
             </div>
           )}
           {!matchesCart && (

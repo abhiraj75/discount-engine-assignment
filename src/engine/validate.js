@@ -13,7 +13,7 @@ const text = (v) => (v === undefined || v === null ? '' : String(v).trim())
 
 export function parseAmount(v) {
   const cleaned = text(v).replace(/^(rs\.?|inr|₹)\s*/i, '').replace(/,/g, '')
-  return cleaned === '' ? NaN : Number(cleaned)
+  return cleaned === '' ? NaN : Math.round(Number(cleaned) * 100) / 100
 }
 
 function parseBoolean(v) {

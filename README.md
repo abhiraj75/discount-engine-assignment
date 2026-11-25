@@ -76,7 +76,7 @@ Each input adapter returns `{ data, errors }` and goes through `validate.js`. To
 - `/api/parse-rule` has no rate limiting. Input is capped at 300 characters.
 - In a PDF, a cell that wraps onto a second line is reported as a bad row.
 - Uploading a new rules CSV replaces any rules added in plain English.
-- The model defaults to `gemini-flash-latest`; set `GEMINI_MODEL` to pin a specific one.
+- Gemini often returns 503/429 under load or on the free tier, so the function tries `gemini-3.5-flash`, then `gemini-2.5-flash`, then `gemini-3.5-flash-lite` (8s timeout each). Set `GEMINI_MODEL` (comma-separated) to change the order.
 
 ## Input formats
 
