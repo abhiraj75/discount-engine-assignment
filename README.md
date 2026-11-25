@@ -2,7 +2,7 @@
 
 A checkout pricing engine. For each cart item it picks the offer that saves the customer the most, stacks any stackable offers on top, applies cart-level offers to the total, and explains the result in plain language.
 
-**Live:** _URL added after deploy_
+**Live:** https://discount-engine-assignment-lake.vercel.app
 
 ## Run locally
 
