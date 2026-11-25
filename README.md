@@ -4,6 +4,8 @@ A checkout pricing engine. For each cart item it picks the offer that saves the 
 
 **Live:** https://discount-engine-assignment-lake.vercel.app
 
+**Walkthrough (Loom):** https://www.loom.com/share/c831e9d58fe149c1aba0339dd3d99d41
+
 ## Run locally
 
 1. `npm install`
