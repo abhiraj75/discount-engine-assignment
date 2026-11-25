@@ -7,10 +7,9 @@ A checkout pricing engine. For each cart item it picks the offer that saves the 
 ## Run locally
 
 1. `npm install`
-2. `cp .env.example .env` and set `GEMINI_API_KEY` (only needed for plain-English rules)
-3. `npm run dev` and open http://localhost:5173
+2. `npm run dev` and open http://localhost:5173
 
-Run the tests with `npm test`.
+Plain-English rules also need a Gemini key: `cp .env.example .env` and set `GEMINI_API_KEY`. Run the tests with `npm test`.
 
 ## How to use
 
